@@ -1,4 +1,4 @@
-import numpy as np
+ numpy as np
 import matplotlib.pyplot as plt
 
 
@@ -18,10 +18,10 @@ class f_star:
         self.x_test = x_test
         self.y_train = y_train
         self.X_train = X_train
-        self.map_mat = map_matrix(X_train)
+        self.map_mat = self.map_matrix()
         self.K_matrix = self.K_matrix()
         self.A = np.transpose(self.K_matrix + np.identity(self.K_matrix.size) * self.noize_variance)
-        self.k_vector = k_vector()
+        self.k_vector = self.k_vector()
 
     @staticmethod
     def map_func(vector):
@@ -37,19 +37,17 @@ class f_star:
                     new_v.append(i * j)
         return new_v
 
-    @staticmethod
-    def map_matrix(X):
+    def map_matrix(self):
         """
         Build a new matrix which is an aggregation of columns map_func(x) for all cases in the training set.
         We have a training set of n observations. The column vector inputs for all n cases are aggregated in
         the D × n design matrix.
-        :param X: D × n design matrix. Aggregation of column vector inputs for all cases in the training set.
         :return: a new matrix which is an aggregation of columns map_func(x) for all cases in the training set.
         """
 
         mat = np.array([])
-        for inp_vec in np.transpose(X):  # go through input vectors in dataset
-            mat.append(map_func(inp_vec))
+        for inp_vec in np.transpose(self.X_train):  # go through input vectors in dataset
+            np.append(mat, self.map_func(inp_vec))
         return np.transpose(mat)
 
     def K_matrix(self):
@@ -57,7 +55,7 @@ class f_star:
         create covariances matrix K.
         :return: K
         """
-        map_mat = map_matrix(self.X)
+        map_mat = self.map_matrix()
         K = np.matmul(np.matmul(np.transpose(map_mat), self.prior_cov_mat), map_mat)
         return K
 
@@ -68,21 +66,20 @@ class f_star:
 
         :return: int
         """
-        k = np.matmul(np.matmul(np.transpose(map_func(x)), self.prior_cov_mat), map_func(y))
+        k = np.matmul(np.matmul(np.transpose(self.map_func(x)), self.prior_cov_mat), self.map_func(y))
         return k
 
-    @staticmethod
-    def k_vector():
+    def k_vector(self):
         vec = []
-        for i in range(X.shape[1]):
-            vec.append(kernel_func(X[:, i], x_test))
+        for i in range(self.X_train.shape[1]):
+            vec.append(self.kernel_func(self.X_train.shape[:, i], self.x_test))
         return np.array(vec)
 
     def mean_f_star(self, k_vector):
         """
         :return: predictive distribution mean
         """
-        coefficients = np.matmul(np.matmul(self.A, y_train))
+        coefficients = np.matmul(np.matmul(self.A, self.y_train))
         f_star_mean = sum([coefficients[i] * k_vector[i] for i in range(len(self.k_vector))])
         return f_star_mean
 
@@ -90,10 +87,10 @@ class f_star:
         """
         :return: predictive distribution variance
         """
-        f_star_var = kernel_func(x_test, x_test) - np.matmul(np.matmul(np.transpose(self.k_vector), A), self.k_vector)
+        f_star_var = self.kernel_func(self.x_test, self.x_test) - np.matmul(np.matmul(np.transpose(self.k_vector),
+                                                                                      self.A), self.k_vector)
         return f_star_var
 
 
 if __name__ == '__main__':
     a = np.random.rand(4)
-    print(map_func(a))
