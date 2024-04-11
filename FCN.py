@@ -11,7 +11,9 @@ import matplotlib.pyplot as plt
 
 class FullyConnectedNetwork:
     """
-    A simple two-layer fully connected neural network with quadratic activation.
+    A simple two-layer fully connected neural network with quadratic activation
+    in the hidden layer and ReLU activation in the output layer, suitable for regression
+    or binary classification tasks.
 
     Attributes:
         input_size (int): Size of the input layer.
@@ -25,9 +27,10 @@ class FullyConnectedNetwork:
         biases2 (ndarray): Biases for the second layer.
     """
 
-    def __init__(self, input_size, hidden_size, output_size, learning_rate, temperature):
+    def __init__(self, input_size: int, hidden_size: int, output_size: int,
+                 learning_rate: float, temperature: float):
         """
-        Initializes the network with random weights and zero biases.
+        Initializes the network with specified sizes and learning parameters.
         """
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -52,89 +55,141 @@ class FullyConnectedNetwork:
         self.biases2 = np.zeros(output_size)
 
     @staticmethod
-    def quadratic_activation(x):
-        """
-        Quadratic activation function.
-
-        Args:
-            x (ndarray): Input tensor.
-
-        Returns:
-            ndarray: Output after applying the quadratic activation.
-        """
+    def quadratic_activation(x: np.ndarray) -> np.ndarray:
+        """Applies a quadratic activation function to the input tensor."""
         return x ** 2
 
     @staticmethod
-    def relu(z):
-        """ReLU activation function."""
+    def relu(z: np.ndarray) -> np.ndarray:
+        """Applies the ReLU activation function to the input tensor."""
         return np.maximum(0, z)
 
-    def forward_pass(self, x):
+    def forward_pass(self, x: np.ndarray) -> np.ndarray:
         """
-            Performs the forward pass through the network, including softmax activation in the final layer.
+        Computes the forward pass through the network.
 
-            Args:
-                x (ndarray): Input vector.
+        Args:
+            x (np.ndarray): Input tensor.
 
-            Returns:
-                ndarray: The probability distribution over classes for the input.
-            """
-        z_1 = self.weights1.dot(x) + self.biases1  # Linear transformation to hidden layer
-        a_1 = self.quadratic_activation(z_1)  # Apply quadratic activation
-        self.z2 = self.weights2.dot(a_1) + self.biases2  # Linear transformation to output layer
-        output = self.relu(self.z2)
+        Returns:
+            np.ndarray: Output of the network.
+        """
+        z_1 = np.dot(x, self.weights1) + self.biases1
+        a_1 = self.quadratic_activation(z_1)
+        z_2 = np.dot(a_1, self.weights2) + self.biases2
+        output = self.relu(z_2)
         return output
 
     @staticmethod
-    def compute_loss(predictions, targets):
+    def compute_loss(predictions: np.ndarray, targets: np.ndarray) -> float:
         """
-        Computes the cross-entropy loss.
+        Computes the mean squared error loss.
 
         Args:
-            predictions (ndarray): Output probabilities from the network.
-            targets (ndarray): Actual target labels.
+            predictions (np.ndarray): Output predictions from the network.
+            targets (np.ndarray): Actual target values.
 
         Returns:
-            float: The computed cross-entropy loss.
-        """
-        return (predictions - targets) ** 2
-
-    @staticmethod
-    def backpropagation(predictions, targets):
-        """
-        Performs backpropagation and updates the weights and biases according to Langevin dynamics.
-
-        Args:
-            x (ndarray): Input tensor.
-            predictions (ndarray): Output probabilities from the network.
-            targets (ndarray): Actual target labels.
+            float: The computed mean squared error loss.
         """
         return np.mean((predictions - targets) ** 2)
 
-    def predict(self, x):
+    def backpropagation(self, x: np.ndarray, a_1: np.ndarray, z_2: np.ndarray,
+                        predictions: np.ndarray, targets: np.ndarray):
         """
-        Predicts the class labels for the input data.
+        Placeholder for the backpropagation process. This should include computing gradients
+        and updating parameters using Langevin dynamics.
+        """
+
+        # Compute gradients
+        grad_weights1, grad_biases1, grad_weights2, grad_biases2 = self.compute_gradients(x, a_1, z_2, predictions,
+                                                                                          targets)
+
+        # Langevin dynamics update for weights and biases
+        self.weights1 -= self.learning_rate * grad_weights1 + np.sqrt(
+            2 * self.learning_rate * self.temperature) * np.random.randn(*self.weights1.shape)
+        self.biases1 -= self.learning_rate * grad_biases1 + np.sqrt(
+            2 * self.learning_rate * self.temperature) * np.random.randn(*self.biases1.shape)
+
+        self.weights2 -= self.learning_rate * grad_weights2 + np.sqrt(
+            2 * self.learning_rate * self.temperature) * np.random.randn(*self.weights2.shape)
+        self.biases2 -= self.learning_rate * grad_biases2 + np.sqrt(
+            2 * self.learning_rate * self.temperature) * np.random.randn(*self.biases2.shape)
+
+        # Similarly for weights2 and biases2...
+
+    def compute_gradients(self, x: np.ndarray, a_1: np.ndarray, z_2: np.ndarray,
+                          predictions: np.ndarray, targets: np.ndarray):
+        """
+        Placeholder for gradient computation. Actual implementation depends on the network
+        architecture and loss function.
 
         Args:
-            x (ndarray): Input tensor.
+            x (ndarray): Input data.
+            a_1 (ndarray): Activations of the hidden layer.
+            z_2 (ndarray): Pre-activation values of the output layer.
+            predictions (ndarray): Network output.
+            targets (ndarray): True target values.
 
         Returns:
-            ndarray: Predicted class labels.
+            A tuple containing gradients for weights and biases in both layers.
         """
-        pass
 
-    def evaluate_accuracy(self, x_test, y_test):
+        N = targets.shape[0]  # Number of  targets
+
+        # Gradient of loss w.r.t predictions
+        d_loss_d_predictions = 2 * (predictions - targets) / N
+
+        # Gradients for output layer (ReLU activation)
+        d_predictions_d_z2 = (z_2 > 0).astype(z_2.dtype)
+        d_loss_d_z2 = d_loss_d_predictions * d_predictions_d_z2
+        d_loss_d_weights2 = np.dot(a_1.T, d_loss_d_z2)
+        d_loss_d_biases2 = np.sum(d_loss_d_z2, axis=0)
+
+        # Backpropagation to hidden layer (Quadratic activation)
+        d_z2_d_a1 = self.weights2
+        d_loss_d_a1 = np.dot(d_loss_d_z2, d_z2_d_a1.T)
+
+        # The derivative computation for quadratic activation
+        z_1 = np.dot(x, self.weights1) + self.biases1
+        d_a1_d_z1 = 2 * z_1  # Derivative of quadratic activation
+
+        d_loss_d_z1 = d_loss_d_a1 * d_a1_d_z1
+        d_loss_d_weights1 = np.dot(x.T, d_loss_d_z1)
+        d_loss_d_biases1 = np.sum(d_loss_d_z1, axis=0)
+
+        return d_loss_d_weights1, d_loss_d_biases1, d_loss_d_weights2, d_loss_d_biases2
+
+    def predict(self, x: np.ndarray) -> np.ndarray:
         """
-        Evaluates the accuracy of the model on the test data.
+        Predicts the class labels or values for the input data.
 
         Args:
-            x_test (ndarray): Test input tensor.
-            y_test (ndarray): Test target labels.
+            x (np.ndarray): Input tensor.
 
         Returns:
-            float: Accuracy of the model on the test data.
+            np.ndarray: Predicted class labels or values.
         """
-        pass
+
+        output_probabilities = self.forward_pass(x)  # Forward_pass returns final layer activations
+        predicted_labels = (output_probabilities > 0.5).astype(int)  # Thresholding at 0.5
+        return predicted_labels
+
+    def evaluate_accuracy(self, x_test: np.ndarray, y_test: np.ndarray) -> float:
+        """
+        Evaluates the model's accuracy on the provided test dataset.
+
+        Args:
+            x_test (np.ndarray): Test input tensor.
+            y_test (np.ndarray): Test target labels or values.
+
+        Returns:
+            float: The model's accuracy on the test data.
+        """
+
+        predicted_labels = self.predict(x_test)
+        accuracy = np.mean(predicted_labels == y_test)  # Calculating the accuracy
+        return accuracy
 
 
 def load_data():
