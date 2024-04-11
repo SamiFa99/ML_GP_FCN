@@ -1,11 +1,7 @@
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
-
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 
 
@@ -60,11 +56,11 @@ class FullyConnectedNetwork:
         return x ** 2
 
     @staticmethod
-    def relu(z: np.ndarray) -> np.ndarray:
+    def relu(z: np.ndarray) -> tuple:
         """Applies the ReLU activation function to the input tensor."""
         return np.maximum(0, z)
 
-    def forward_pass(self, x: np.ndarray) -> np.ndarray:
+    def forward_pass(self, x: np.ndarray):
         """
         Computes the forward pass through the network.
 
@@ -78,7 +74,7 @@ class FullyConnectedNetwork:
         a_1 = self.quadratic_activation(z_1)
         z_2 = np.dot(a_1, self.weights2) + self.biases2
         output = self.relu(z_2)
-        return output
+        return output, a_1, z_2
 
     @staticmethod
     def compute_loss(predictions: np.ndarray, targets: np.ndarray) -> float:
@@ -171,8 +167,8 @@ class FullyConnectedNetwork:
             np.ndarray: Predicted class labels or values.
         """
 
-        output_probabilities = self.forward_pass(x)  # Forward_pass returns final layer activations
-        predicted_labels = (output_probabilities > 0.5).astype(int)  # Thresholding at 0.5
+        output, _, _ = self.forward_pass(x)  # Unpack the tuple to get the output
+        predicted_labels = (output > 0.5).astype(int)  # Apply threshold
         return predicted_labels
 
     def evaluate_accuracy(self, x_test: np.ndarray, y_test: np.ndarray) -> float:
@@ -192,33 +188,116 @@ class FullyConnectedNetwork:
         return accuracy
 
 
-def load_data():
+def load_data(filename):
     """
-    Loads and preprocesses the MNIST dataset.
+    Loads and preprocesses the kidney stone prediction dataset to randomly select
+    40 samples for training and the remaining for testing.
+
+    Args:
+        filename (str): The path to the dataset file.
 
     Returns:
-        tuple: Preprocessed training and test datasets.
+        tuple: A tuple containing the training and testing datasets:
+               (X_train, X_test, y_train, y_test).
     """
-    pass
+    # Load the dataset
+    df = pd.read_csv(filename)
+
+    # Drop rows with missing values
+    df.dropna(inplace=True)
+
+    # 'target' is the name of the column indicating the presence of kidney stones
+    X = df.drop('target', axis=1).values
+    y = df['target'].values
+
+    # Randomly select 40 samples for training; the rest will be for testing
+    X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=40, random_state=42)
+
+    # Normalize the feature data
+    scaler = StandardScaler()
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
+
+    return X_train, X_test, y_train, y_test
 
 
 def train_model(model, x_train, y_train, epochs):
     """
-    Trains the model on the MNIST training dataset.
+    Trains the model on the given dataset and plots the training loss.
 
     Args:
         model (FullyConnectedNetwork): The neural network model to be trained.
-        x_train (ndarray): Training input data.
-        y_train (ndarray): Training target labels.
+        x_train (np.ndarray): Training input data.
+        y_train (np.ndarray): Training target labels.
         epochs (int): Number of epochs to train the model.
     """
-    pass
+    # Initialize a list to track the loss over epochs
+    loss_history = []
+
+    for epoch in range(epochs):
+        total_loss = 0
+
+        for i in range(len(x_train)):
+            # Assuming x_train and y_train are numpy arrays and can be indexed into.
+            # Adjust the reshaping as needed, especially if working with multidimensional data like images.
+            x_sample = x_train[i].reshape(1, -1)
+            y_sample = y_train[i].reshape(1, -1)
+
+            predictions, a_1, z_2 = model.forward_pass(x_sample)
+            loss = model.compute_loss(predictions, y_sample)
+            total_loss += loss
+
+            model.backpropagation(x_sample, a_1, z_2, predictions, y_sample)
+
+        # Compute the average loss for the epoch and append it to the loss_history list
+        average_loss = total_loss / len(x_train)
+        loss_history.append(average_loss)
+
+        # Optionally print the average loss every few epochs
+        if epoch % 10 == 0:
+            print(f'Epoch {epoch + 1}/{epochs}, Loss: {average_loss:.4f}')
+
+    # Plot the loss history after training
+    plt.figure(figsize=(10, 6))
+    plt.plot(loss_history, label='Training Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Loss During Training')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
 
 
 def main():
     """
     Main function to execute the training and evaluation.
     """
+    file = "kindey stone urine analysis.csv"
+
+    # Load and preprocess the data
+    X_train, X_test, y_train, y_test = load_data(file)
+
+    # Define the network dimensions and hyperparameters
+    input_size = X_train.shape[1]  # Number of features
+    hidden_size = 4  # Example: 10 neurons in the hidden layer, adjust based on your data
+    output_size = 1  # Assuming binary classification
+    learning_rate = 0.1  # Example learning rate, adjust based on your training process
+    temperature = 1  # Example temperature for Langevin dynamics, adjust as needed
+
+    # Initialize the neural network model
+    model = FullyConnectedNetwork(input_size, hidden_size, output_size, learning_rate, temperature)
+
+    # Define the number of epochs for training
+    epochs = 100  # Example: 100 epochs, adjust based on your training needs
+
+    # Train the model
+    print("Starting training...")
+    train_model(model, X_train, y_train, epochs)
+    print("Training completed.")
+
+    # Evaluate the model's performance on the test set
+    accuracy = model.evaluate_accuracy(X_test, y_test)
+    print(f"Model accuracy on test set: {accuracy:.2%}")
 
 
 if __name__ == "__main__":
