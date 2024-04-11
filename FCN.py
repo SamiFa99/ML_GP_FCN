@@ -62,36 +62,31 @@ class FullyConnectedNetwork:
         Returns:
             ndarray: Output after applying the quadratic activation.
         """
-        return x**2
+        return x ** 2
 
-    def softmax(self, x):
-        """
-        Softmax activation function.
-
-        Args:
-            x (ndarray): Input tensor.
-
-        Returns:
-            ndarray: Probabilities corresponding to each class.
-        """
-        pass
+    @staticmethod
+    def relu(z):
+        """ReLU activation function."""
+        return np.maximum(0, z)
 
     def forward_pass(self, x):
         """
-        Performs the forward pass through the network.
+            Performs the forward pass through the network, including softmax activation in the final layer.
 
-        Args:
-            x (ndarray): Input tensor.
+            Args:
+                x (ndarray): Input vector.
 
-        Returns:
-            tuple of ndarray: The raw scores of the last layer, and the activated output.
-        """
+            Returns:
+                ndarray: The probability distribution over classes for the input.
+            """
         z_1 = self.weights1.dot(x) + self.biases1  # Linear transformation to hidden layer
         a_1 = self.quadratic_activation(z_1)  # Apply quadratic activation
         self.z2 = self.weights2.dot(a_1) + self.biases2  # Linear transformation to output layer
-        return a_1, self.z2
+        output = self.relu(self.z2)
+        return output
 
-    def compute_loss(self, predictions, targets):
+    @staticmethod
+    def compute_loss(predictions, targets):
         """
         Computes the cross-entropy loss.
 
@@ -102,9 +97,10 @@ class FullyConnectedNetwork:
         Returns:
             float: The computed cross-entropy loss.
         """
-        pass
+        return (predictions - targets) ** 2
 
-    def backpropagation(self, x, predictions, targets):
+    @staticmethod
+    def backpropagation(predictions, targets):
         """
         Performs backpropagation and updates the weights and biases according to Langevin dynamics.
 
@@ -113,7 +109,7 @@ class FullyConnectedNetwork:
             predictions (ndarray): Output probabilities from the network.
             targets (ndarray): Actual target labels.
         """
-        pass
+        return np.mean((predictions - targets) ** 2)
 
     def predict(self, x):
         """
@@ -141,7 +137,7 @@ class FullyConnectedNetwork:
         pass
 
 
-def load_mnist_data():
+def load_data():
     """
     Loads and preprocesses the MNIST dataset.
 
@@ -168,7 +164,6 @@ def main():
     """
     Main function to execute the training and evaluation.
     """
-    pass
 
 
 if __name__ == "__main__":
