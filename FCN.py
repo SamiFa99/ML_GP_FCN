@@ -24,7 +24,7 @@ class FullyConnectedNetwork:
     """
 
     def __init__(self, input_size: int, hidden_size: int, output_size: int,
-                 learning_rate: float, temperature: float):
+                 learning_rate: float, temperature: float, gamma: float):
         """
         Initializes the network with specified sizes and learning parameters.
         """
@@ -33,21 +33,11 @@ class FullyConnectedNetwork:
         self.output_size = output_size
         self.learning_rate = learning_rate
         self.temperature = temperature
-        self.z2 = np.zeros(input_size)
-        # Initialize weights for the first layer (input to hidden layer)
-        # The shape is (input_size, hidden_size) to match the input vector and the size of the hidden layer
+        self.gamma = gamma
+        # Initialize weights with a smaller standard deviation
         self.weights1 = np.random.randn(input_size, hidden_size) * 0.01
-
-        # Initialize biases for the first layer
-        # It's a vector of shape (hidden_size,) as there's one bias per neuron in the hidden layer
-        self.biases1 = np.zeros(hidden_size)
-
-        # Initialize weights for the second layer (hidden to output layer)
-        # The shape is (hidden_size, output_size) to connect the hidden layer to the output layer
         self.weights2 = np.random.randn(hidden_size, output_size) * 0.01
-
-        # Initialize biases for the second layer
-        # It's a vector of shape (output_size,) as there's one bias per output neuron
+        self.biases1 = np.zeros(hidden_size)
         self.biases2 = np.zeros(output_size)
 
     @staticmethod
@@ -56,9 +46,11 @@ class FullyConnectedNetwork:
         return x ** 2
 
     @staticmethod
-    def relu(z: np.ndarray) -> tuple:
-        """Applies the ReLU activation function to the input tensor."""
-        return np.maximum(0, z)
+    def sigmoid(z: np.ndarray) -> np.ndarray:
+        """Applies the sigmoid activation function using a safe method to prevent overflow."""
+        # Clipping input values to avoid very large values in exp()
+        z = np.clip(z, -10, 10)
+        return 1 / (1 + np.exp(-z))
 
     def forward_pass(self, x: np.ndarray):
         """
@@ -73,86 +65,58 @@ class FullyConnectedNetwork:
         z_1 = np.dot(x, self.weights1) + self.biases1
         a_1 = self.quadratic_activation(z_1)
         z_2 = np.dot(a_1, self.weights2) + self.biases2
-        output = self.relu(z_2)
+        output = self.sigmoid(z_2)
         return output, a_1, z_2
 
     @staticmethod
     def compute_loss(predictions: np.ndarray, targets: np.ndarray) -> float:
-        """
-        Computes the mean squared error loss.
-
-        Args:
-            predictions (np.ndarray): Output predictions from the network.
-            targets (np.ndarray): Actual target values.
-
-        Returns:
-            float: The computed mean squared error loss.
-        """
-        return np.mean((predictions - targets) ** 2)
+        epsilon = 1e-12
+        predictions = np.clip(predictions, epsilon, 1 - epsilon)
+        return -np.mean(targets * np.log(predictions) + (1 - targets) * np.log(1 - predictions))
 
     def backpropagation(self, x: np.ndarray, a_1: np.ndarray, z_2: np.ndarray,
                         predictions: np.ndarray, targets: np.ndarray):
         """
-        Placeholder for the backpropagation process. This should include computing gradients
-        and updating parameters using Langevin dynamics.
+        Computes gradients and updates parameters using Langevin dynamics.
         """
 
         # Compute gradients
         grad_weights1, grad_biases1, grad_weights2, grad_biases2 = self.compute_gradients(x, a_1, z_2, predictions,
                                                                                           targets)
 
-        # Langevin dynamics update for weights and biases
-        self.weights1 -= self.learning_rate * grad_weights1 + np.sqrt(
-            2 * self.learning_rate * self.temperature) * np.random.randn(*self.weights1.shape)
-        self.biases1 -= self.learning_rate * grad_biases1 + np.sqrt(
-            2 * self.learning_rate * self.temperature) * np.random.randn(*self.biases1.shape)
+        # Langevin dynamics update for weights and biases with decay
+        self.weights1 -= (self.learning_rate * grad_weights1 + self.gamma * self.weights1 +
+                          np.sqrt(2 * self.learning_rate * self.temperature) * np.random.randn(*self.weights1.shape))
+        self.biases1 -= (self.learning_rate * grad_biases1 + self.gamma * self.biases1 +
+                         np.sqrt(2 * self.learning_rate * self.temperature) * np.random.randn(*self.biases1.shape))
 
-        self.weights2 -= self.learning_rate * grad_weights2 + np.sqrt(
-            2 * self.learning_rate * self.temperature) * np.random.randn(*self.weights2.shape)
-        self.biases2 -= self.learning_rate * grad_biases2 + np.sqrt(
-            2 * self.learning_rate * self.temperature) * np.random.randn(*self.biases2.shape)
-
-        # Similarly for weights2 and biases2...
+        self.weights2 -= (self.learning_rate * grad_weights2 + self.gamma * self.weights2 +
+                          np.sqrt(2 * self.learning_rate * self.temperature) * np.random.randn(*self.weights2.shape))
+        self.biases2 -= (self.learning_rate * grad_biases2 + self.gamma * self.biases2 +
+                         np.sqrt(2 * self.learning_rate * self.temperature) * np.random.randn(*self.biases2.shape))
 
     def compute_gradients(self, x: np.ndarray, a_1: np.ndarray, z_2: np.ndarray,
                           predictions: np.ndarray, targets: np.ndarray):
-        """
-        Placeholder for gradient computation. Actual implementation depends on the network
-        architecture and loss function.
+        N = targets.shape[0]  # Number of samples in the batch
 
-        Args:
-            x (ndarray): Input data.
-            a_1 (ndarray): Activations of the hidden layer.
-            z_2 (ndarray): Pre-activation values of the output layer.
-            predictions (ndarray): Network output.
-            targets (ndarray): True target values.
+        # Ensure predictions and targets are correctly shaped
+        d_loss_d_predictions = predictions - targets  # should be (batch_size, 1)
 
-        Returns:
-            A tuple containing gradients for weights and biases in both layers.
-        """
+        # Gradients for the output layer
+        d_loss_d_z2 = d_loss_d_predictions  # should be (batch_size, 1)
+        d_loss_d_weights2 = np.dot(a_1.T, d_loss_d_z2) / N
+        d_loss_d_biases2 = np.sum(d_loss_d_z2, axis=0) / N
 
-        N = targets.shape[0]  # Number of  targets
-
-        # Gradient of loss w.r.t predictions
-        d_loss_d_predictions = 2 * (predictions - targets) / N
-
-        # Gradients for output layer (ReLU activation)
-        d_predictions_d_z2 = (z_2 > 0).astype(z_2.dtype)
-        d_loss_d_z2 = d_loss_d_predictions * d_predictions_d_z2
-        d_loss_d_weights2 = np.dot(a_1.T, d_loss_d_z2)
-        d_loss_d_biases2 = np.sum(d_loss_d_z2, axis=0)
-
-        # Backpropagation to hidden layer (Quadratic activation)
-        d_z2_d_a1 = self.weights2
+        # Backpropagation to the hidden layer
+        d_z2_d_a1 = self.weights2  # should be (5, 1)
         d_loss_d_a1 = np.dot(d_loss_d_z2, d_z2_d_a1.T)
 
-        # The derivative computation for quadratic activation
+        # Derivative computation for quadratic activation
         z_1 = np.dot(x, self.weights1) + self.biases1
-        d_a1_d_z1 = 2 * z_1  # Derivative of quadratic activation
-
+        d_a1_d_z1 = 2 * z_1
         d_loss_d_z1 = d_loss_d_a1 * d_a1_d_z1
-        d_loss_d_weights1 = np.dot(x.T, d_loss_d_z1)
-        d_loss_d_biases1 = np.sum(d_loss_d_z1, axis=0)
+        d_loss_d_weights1 = np.dot(x.T, d_loss_d_z1) / N
+        d_loss_d_biases1 = np.sum(d_loss_d_z1, axis=0) / N
 
         return d_loss_d_weights1, d_loss_d_biases1, d_loss_d_weights2, d_loss_d_biases2
 
@@ -218,49 +182,73 @@ def load_data(filename):
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
 
+    # Reshape y_train and y_test to ensure they are 2-dimensional (n_samples, 1)
+    y_train = y_train.reshape(-1, 1)
+    y_test = y_test.reshape(-1, 1)
+
     return X_train, X_test, y_train, y_test
 
 
-def train_model(model, x_train, y_train, epochs):
+def train_model(model, x_train, y_train, batch_size=10, tolerance=0.001, max_iterations=1000):
     """
-    Trains the model on the given dataset and plots the training loss.
+    Trains the model on the given dataset using mini-batches and stops when the loss change is below a tolerance level.
 
     Args:
         model (FullyConnectedNetwork): The neural network model to be trained.
         x_train (np.ndarray): Training input data.
         y_train (np.ndarray): Training target labels.
-        epochs (int): Number of epochs to train the model.
+        batch_size (int): Number of samples per batch.
+        tolerance (float): Minimum change in loss required to continue training.
+        max_iterations (int): Maximum number of iterations to prevent infinite loops.
+
     """
-    # Initialize a list to track the loss over epochs
+    # Initialize variables for tracking the loss and iterations
     loss_history = []
+    iteration = 0
+    last_loss = float('inf')
 
-    for epoch in range(epochs):
+    while iteration < max_iterations:
+        # Shuffle the data at the beginning of each epoch to prevent cycles.
+        indices = np.arange(len(x_train))
+        np.random.shuffle(indices)
+        x_train = x_train[indices]
+        y_train = y_train[indices]
+
         total_loss = 0
+        batches = len(x_train) // batch_size
 
-        for i in range(len(x_train)):
-            # Assuming x_train and y_train are numpy arrays and can be indexed into.
-            # Adjust the reshaping as needed, especially if working with multidimensional data like images.
-            x_sample = x_train[i].reshape(1, -1)
-            y_sample = y_train[i].reshape(1, -1)
+        for i in range(batches):
+            start = i * batch_size
+            end = start + batch_size
+            x_batch = x_train[start:end]
+            y_batch = y_train[start:end]
 
-            predictions, a_1, z_2 = model.forward_pass(x_sample)
-            loss = model.compute_loss(predictions, y_sample)
+            predictions, a_1, z_2 = model.forward_pass(x_batch)
+            loss = model.compute_loss(predictions, y_batch)
             total_loss += loss
 
-            model.backpropagation(x_sample, a_1, z_2, predictions, y_sample)
+            model.backpropagation(x_batch, a_1, z_2, predictions, y_batch)
 
-        # Compute the average loss for the epoch and append it to the loss_history list
-        average_loss = total_loss / len(x_train)
+        # Compute the average loss for this iteration
+        average_loss = total_loss / batches
         loss_history.append(average_loss)
 
-        # Optionally print the average loss every few epochs
-        if epoch % 10 == 0:
-            print(f'Epoch {epoch + 1}/{epochs}, Loss: {average_loss:.4f}')
+        # Check for convergence
+        if np.abs(last_loss - average_loss) < tolerance:
+            print(f"Convergence reached after {iteration + 1} iterations.")
+            break
+
+        last_loss = average_loss
+        iteration += 1
+
+        # Optionally print the average loss every few iterations
+        if iteration % 10 == 0 or iteration == 1:
+            print(f'Iteration {iteration}, Loss: {average_loss:.4f}')
 
     # Plot the loss history after training
     plt.figure(figsize=(10, 6))
     plt.plot(loss_history, label='Training Loss')
-    plt.xlabel('Epoch')
+    plt.xlabel('Iteration')
     plt.ylabel('Loss')
     plt.title('Loss During Training')
     plt.legend()
@@ -272,27 +260,25 @@ def main():
     """
     Main function to execute the training and evaluation.
     """
-    file = "kindey stone urine analysis.csv"
+    file = "kindey stone urine analysis.csv"  # Ensure the filename is spelled correctly
 
     # Load and preprocess the data
     X_train, X_test, y_train, y_test = load_data(file)
 
     # Define the network dimensions and hyperparameters
-    input_size = X_train.shape[1]  # Number of features
-    hidden_size = 4  # Example: 10 neurons in the hidden layer, adjust based on your data
-    output_size = 1  # Assuming binary classification
-    learning_rate = 0.1  # Example learning rate, adjust based on your training process
-    temperature = 1  # Example temperature for Langevin dynamics, adjust as needed
+    input_size = X_train.shape[1]
+    hidden_size = 5
+    output_size = 1
+    learning_rate = 0.01
+    temperature = 1
+    gamma = 0  # Choose an appropriate value for gamma
 
-    # Initialize the neural network model
-    model = FullyConnectedNetwork(input_size, hidden_size, output_size, learning_rate, temperature)
+    # Initialize the neural network model with the new gamma parameter
+    model = FullyConnectedNetwork(input_size, hidden_size, output_size, learning_rate, temperature, gamma)
 
-    # Define the number of epochs for training
-    epochs = 100  # Example: 100 epochs, adjust based on your training needs
-
-    # Train the model
+    # Train the model with batch processing
     print("Starting training...")
-    train_model(model, X_train, y_train, epochs)
+    train_model(model, X_train, y_train, batch_size=5, tolerance=0.001, max_iterations=500)
     print("Training completed.")
 
     # Evaluate the model's performance on the test set
