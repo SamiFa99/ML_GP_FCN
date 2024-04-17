@@ -24,93 +24,100 @@ Functions:
 """
 
 import numpy as np
-from train_2L_FCN import load_data, FullyConnectedNetwork
+from train_2L_FCN import *
 
 
-def kernel_function(model, f_1, f_2):
+def forward_pass(Theta, x):
     """
-    Computes the kernel function value between two input data points using the trained neural network model.
-
-    Args:
-        model (FullyConnectedNetwork): The trained neural network model.
-        f_1 (ndarray): Input data point x.
-        f_2 (ndarray): Input data point y.
-
+    Computes the forward pass through the network.
+        :param x:
+        :param Theta:
     Returns:
-        float: The kernel function value between f_1 and f_2.
+        np.ndarray: Output of the network
     """
-    k = np.mean(model.forward_pass(f_1)[0] * model.forward_pass(f_2)[0])
+    w, a, bias2 = Theta
+
+    z_1 = np.matmul(np.transpose(x), np.transpose(w))
+    a_1 = np.square(z_1)
+    z_2 = np.dot(a_1, a) + bias2
+
+    return z_2, a_1
+
+
+def kernel_function(Theta, x_1, x_2):
+
+    k = np.mean(forward_pass(Theta, x_1)[0] * forward_pass(Theta, x_2)[0])
     return k
 
 
-def K(model, X):
-    """
-    Computes the kernel matrix for a given set of input data points.
+def K(Theta, X):
 
-    Args:
-        model (FullyConnectedNetwork): The untrained neural network model.
-        X (ndarray): Input data points matrix.
-
-    Returns:
-        ndarray: The kernel matrix computed for the input data points.
-    """
     K = np.zeros((X.shape[0], X.shape[0]))
     for r in range(X.shape[0]):
         for c in range(X.shape[0]):
-            K[r, c] = kernel_function(model, X[r], X[c])
+            K[r, c] = kernel_function(Theta, X[r], X[c])
     return K
 
 
-def f_prediction(model, x_test, X, y):
-    """
-    Predicts the mean value of the target variable for a test point using Gaussian Process Regression
-    with the untrained neural network model.
+def f_prediction(Theta, X_test, X, y_train, temperature):
 
-    Args:
-        model (FullyConnectedNetwork): The untrained neural network model.
-        x_test (ndarray): Test data point for which prediction is to be made.
-        X (ndarray): Input data points matrix.
-        y (ndarray): Target variable values corresponding to the input data points.
+    many_f_mean = []
+    cov_mat = np.linalg.inv(K(Theta, X) + np.identity(X.shape[0]) * 1 / temperature)  # matrix to invert
+    for x in X_test:
+        f_mean = 0
+        for i in range(X.shape[0]):
+            for j in range(X.shape[0]):
+                f_mean += kernel_function(Theta, x, X[i]) * cov_mat[i, j] * y_train[j]
+        many_f_mean.append(f_mean)
 
-    Returns:
-        float: The predicted mean value of the target variable for the test point.
-    """
-    f_mean = 0
-    cov_mat = np.linalg.inv(K(model, X) + np.identity(X.shape[0]) * 1 / model.temperature)  # matrix to invert
-    for i in range(X.shape[0]):
-        for j in range(X.shape[0]):
-            f_mean += kernel_function(model, x_test, X[i]) * cov_mat[i, j] * y[j]
-    return f_mean
+    return many_f_mean
+
 
 
 def main():
     """
     The main function that demonstrates the usage of the implemented Gaussian Process Regression method.
     """
-    # Load and preprocess the data
-    X_train, y_train, = load_data(20)
-
     # Define the network dimensions and hyperparameters
     input_size = 3
-    hidden_size = 30
-    output_size = 1
-    learning_rate = 0.00001
-    temperature = 1
-    Lambda = 1  # a value determining the strength of the penalty (encouraging smaller weights)
+    hidden_size = 400
+    output_size = 10
+    temperature = 0.1
+    n = 40
 
-    # Initialize the neural network model with the new gamma parameter
-    model = FullyConnectedNetwork(input_size, hidden_size, output_size, learning_rate, temperature, Lambda)
+    # Create data point
+    X_train = np.random.randint(-4, 4, (n, 3))  # Generate n random points in the XYZ plane
+    # Calculate the squared distance from the origin for each point
+    y_train = np.sqrt(np.sum(X_train ** 2, axis=1, keepdims=True))
 
-    # create test point
-    x_test = np.array([0.1, 0.22, 0.3])
-    y_test = np.dot(x_test, x_test)
+    # Create test point
+    X_test = np.random.randint(-10, 10, (n, 3))  # Generate n random points in the XYZ plane
+    # Calculate the squared distance from the origin for each point
+    y_test = np.sqrt(np.sum(X_train ** 2, axis=1, keepdims=True))
+
+    # Initialize the neural network model
+    a = np.random.normal(0, 1. / np.sqrt(hidden_size), (hidden_size, 1))
+    w = np.random.normal(0, 1. / np.sqrt(input_size), (hidden_size, input_size))
+    bias2 = np.random.normal(0, 1. / np.sqrt(input_size), (output_size, 1))
+    Theta = (w, a, bias2)
 
     # Gaussian process predictor
-    f_mean_prediction = f_prediction(model, x_test, X_train, y_train)
-    err = abs(f_mean_prediction - y_test)
-    print("f_mean_prediction: ", f_prediction(model, x_test, X_train, y_train))
-    print(f"err for test points: {err}")
+    f_mean_prediction = f_prediction(Theta, X_test, X_train, y_train, temperature)
+    average_loss = sum((f_mean_prediction - y_test) ** 2) / len(y_test)
+    print("avrage f_mean_prediction: ", sum(f_mean_prediction) / len(f_mean_prediction))
+    print(f"average loss for test points: {average_loss}")
+
+    # # Calculate the marginal prior distribution, f(x_1)
+    # his1, bins1 = np.histogram(f_mean_prediction, bins=10**5 // 400, density=True)
+    #
+    # # Plot
+    # plt.figure()
+    # plt.plot(bins1[:-1], f_mean_prediction, '.')
+    # plt.legend()
+    # plt.ylabel('P(f)')
+    # plt.xlabel('f')
+    # plt.show()
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # TODO: add several test points and show distribution
     main()
