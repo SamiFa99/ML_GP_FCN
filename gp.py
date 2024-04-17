@@ -1,96 +1,116 @@
- numpy as np
-import matplotlib.pyplot as plt
+"""
+Kernel-based Gaussian Process Regression using a Fully Connected Neural Network
+
+This script implements Gaussian Process Regression (GPR) using a neural network as the kernel function.
+The neural network used in this implementation is a fully connected feedforward neural network with one hidden layer.
+The GPR is performed by calculating the kernel function for a test point using the kernel function
+defined by the neural network.
+The kernet defined as an average of a dot product between two outputs of the network,
+with respect to the weights and biases that are drawn from centered Gaussian distribution.
+
+Functions:
+    kernel_function(model, f_1, f_2):
+        Computes the kernel function value between two output data points using the trained neural network model.
+
+    K(model, X):
+        Computes the kernel matrix for a given set of input data points using the trained neural network model.
+
+    f_prediction(model, x_test, X, y):
+        Predicts the mean value of the target variable for a test point using Gaussian Process Regression
+        with the trained neural network model.
+
+    main():
+        The main function that demonstrates the usage of the implemented Gaussian Process Regression method.
+"""
+
+import numpy as np
+from train_2L_FCN import load_data, FullyConnectedNetwork
 
 
-class f_star:
+def kernel_function(model, f_1, f_2):
     """
-    Predictive distribution
+    Computes the kernel function value between two input data points using the trained neural network model.
+
+    Args:
+        model (FullyConnectedNetwork): The trained neural network model.
+        f_1 (ndarray): Input data point x.
+        f_2 (ndarray): Input data point y.
+
+    Returns:
+        float: The kernel function value between f_1 and f_2.
     """
-    def __init__(self, X_train, y_train, x_test, noize_variance, prior_cov_mat):
-        """
-        :param X_train:
-        :param y_train:
-        :param x_test:
-        :param noize_variance:
-        """
-        self.prior_cov_mat = prior_cov_mat
-        self.noize_variance = noize_variance
-        self.x_test = x_test
-        self.y_train = y_train
-        self.X_train = X_train
-        self.map_mat = self.map_matrix()
-        self.K_matrix = self.K_matrix()
-        self.A = np.transpose(self.K_matrix + np.identity(self.K_matrix.size) * self.noize_variance)
-        self.k_vector = self.k_vector()
-
-    @staticmethod
-    def map_func(vector):
-        """
-        mapping a vector [x1, x2, ..., xn] to a higher dim
-        :param vector: a vector [x1, x2, ..., xn]
-        :return: vector [x1, x2, ..., xN]
-        """
-        new_v = []
-        for i in vector:
-            for j in vector:
-                if j >= i:
-                    new_v.append(i * j)
-        return new_v
-
-    def map_matrix(self):
-        """
-        Build a new matrix which is an aggregation of columns map_func(x) for all cases in the training set.
-        We have a training set of n observations. The column vector inputs for all n cases are aggregated in
-        the D × n design matrix.
-        :return: a new matrix which is an aggregation of columns map_func(x) for all cases in the training set.
-        """
-
-        mat = np.array([])
-        for inp_vec in np.transpose(self.X_train):  # go through input vectors in dataset
-            np.append(mat, self.map_func(inp_vec))
-        return np.transpose(mat)
-
-    def K_matrix(self):
-        """
-        create covariances matrix K.
-        :return: K
-        """
-        map_mat = self.map_matrix()
-        K = np.matmul(np.matmul(np.transpose(map_mat), self.prior_cov_mat), map_mat)
-        return K
-
-    def kernel_func(self, x, y):
-        """
-        :param x:
-        :param y:
-
-        :return: int
-        """
-        k = np.matmul(np.matmul(np.transpose(self.map_func(x)), self.prior_cov_mat), self.map_func(y))
-        return k
-
-    def k_vector(self):
-        vec = []
-        for i in range(self.X_train.shape[1]):
-            vec.append(self.kernel_func(self.X_train.shape[:, i], self.x_test))
-        return np.array(vec)
-
-    def mean_f_star(self, k_vector):
-        """
-        :return: predictive distribution mean
-        """
-        coefficients = np.matmul(np.matmul(self.A, self.y_train))
-        f_star_mean = sum([coefficients[i] * k_vector[i] for i in range(len(self.k_vector))])
-        return f_star_mean
-
-    def var_f_star(self):
-        """
-        :return: predictive distribution variance
-        """
-        f_star_var = self.kernel_func(self.x_test, self.x_test) - np.matmul(np.matmul(np.transpose(self.k_vector),
-                                                                                      self.A), self.k_vector)
-        return f_star_var
+    k = np.mean(model.forward_pass(f_1)[0] * model.forward_pass(f_2)[0])
+    return k
 
 
-if __name__ == '__main__':
-    a = np.random.rand(4)
+def K(model, X):
+    """
+    Computes the kernel matrix for a given set of input data points.
+
+    Args:
+        model (FullyConnectedNetwork): The untrained neural network model.
+        X (ndarray): Input data points matrix.
+
+    Returns:
+        ndarray: The kernel matrix computed for the input data points.
+    """
+    K = np.zeros((X.shape[0], X.shape[0]))
+    for r in range(X.shape[0]):
+        for c in range(X.shape[0]):
+            K[r, c] = kernel_function(model, X[r], X[c])
+    return K
+
+
+def f_prediction(model, x_test, X, y):
+    """
+    Predicts the mean value of the target variable for a test point using Gaussian Process Regression
+    with the untrained neural network model.
+
+    Args:
+        model (FullyConnectedNetwork): The untrained neural network model.
+        x_test (ndarray): Test data point for which prediction is to be made.
+        X (ndarray): Input data points matrix.
+        y (ndarray): Target variable values corresponding to the input data points.
+
+    Returns:
+        float: The predicted mean value of the target variable for the test point.
+    """
+    f_mean = 0
+    cov_mat = np.linalg.inv(K(model, X) + np.identity(X.shape[0]) * 1 / model.temperature)  # matrix to invert
+    for i in range(X.shape[0]):
+        for j in range(X.shape[0]):
+            f_mean += kernel_function(model, x_test, X[i]) * cov_mat[i, j] * y[j]
+    return f_mean
+
+
+def main():
+    """
+    The main function that demonstrates the usage of the implemented Gaussian Process Regression method.
+    """
+    # Load and preprocess the data
+    X_train, y_train, = load_data(20)
+
+    # Define the network dimensions and hyperparameters
+    input_size = 3
+    hidden_size = 30
+    output_size = 1
+    learning_rate = 0.00001
+    temperature = 1
+    Lambda = 1  # a value determining the strength of the penalty (encouraging smaller weights)
+
+    # Initialize the neural network model with the new gamma parameter
+    model = FullyConnectedNetwork(input_size, hidden_size, output_size, learning_rate, temperature, Lambda)
+
+    # create test point
+    x_test = np.array([0.1, 0.22, 0.3])
+    y_test = np.dot(x_test, x_test)
+
+    # Gaussian process predictor
+    f_mean_prediction = f_prediction(model, x_test, X_train, y_train)
+    err = abs(f_mean_prediction - y_test)
+    print("f_mean_prediction: ", f_prediction(model, x_test, X_train, y_train))
+    print(f"err for test points: {err}")
+
+
+if __name__ == "__main__":
+    main()
